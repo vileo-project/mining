@@ -21,14 +21,17 @@ class CBlock {
     unsigned index = 0;
     unsigned time = 0;
     unsigned algo = 1;
+    unsigned a51 = 0;
     void settarget();
     CBlock(CBlock* _prev, unsigned _algo);
-    void Print();
+    //void Print();
+    uhash algopart();
 
 public:
     void PrintAlgo();
-    void PrintWork();
-    void PrintAll();
+    void PrintFork();
+    //void PrintWork();
+    //void PrintAll();
     void mining(unsigned _amount);
     CBlock();
     ~CBlock();

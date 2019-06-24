@@ -7,9 +7,8 @@
 
 int main() {
     CBlock c;
-    c.mining(10000);
-    c.PrintAll();
-    c.PrintWork();
+    c.mining(3000);
+    c.PrintFork();
     c.PrintAlgo();
     return 0;
 }

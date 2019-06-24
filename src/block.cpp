@@ -6,6 +6,19 @@
 unsigned CBlock::ntime = 60;
 vector <CBlock*> CBlock::fork;
 
+uhash CBlock::algopart() {
+    switch (algo) {
+    case 1: return 3;
+        break;
+    case 2: return  3;
+        break;
+    case 3: return  6;
+        break;
+    case 4: return  6;
+        break;
+    }
+    return 1;
+}
 void CBlock::settarget() {
     unsigned range = 300;
     auto atime = prev->time;
@@ -20,19 +33,9 @@ void CBlock::settarget() {
         }
     }
     atime -= block->prev ? block->prev->time : 0;
-    switch (algo) {
-    case 1: k = 3;
-        break;
-    case 2: k = 3;
-        break;
-    case 3: k = 6;
-        break;
-    case 4: k = 6;
-        break;
-    }
     if (atime && ntime * awork / atime > 1)
         //target = 2^256 / work - 1
-        target = (~(k * ntime * awork / atime) + 1) / (k * ntime * awork / atime);
+        target = (~(algopart() * ntime * awork / atime) + 1) / (algopart() * ntime * awork / atime);
     if (target > uhash(-1) >> 1) target = uhash(-1) >> 1;
 }
 
@@ -40,19 +43,31 @@ void CBlock::settarget() {
 
 void CBlock::mining(unsigned _amount) {
     while (_amount) {
-        auto root = fork.back();
-        fork.pop_back();
-        auto &curnext = root->next;
-        for (auto i = 1; i <= 4; i++) {
-            auto pnblock = new CBlock(root, i);
-            curnext.push_back(pnblock);
+        auto a51block = 1000;
+        vector <CBlock*> tmp;
+        while (!fork.empty()) {
+            auto root = fork.back();
+            fork.pop_back();
+            double awork = 1;
+            auto &curnext = root->next;
+            for (auto i = 1; i <= 4; i++) {
+                auto pnblock = new CBlock(root, i);
+                curnext.push_back(pnblock);
+                awork *= pow(~pnblock->target / (pnblock->target + 1) + 1, 1.0 / pnblock->algopart());
+            }
+            sort(curnext.begin(), curnext.end(), [](CBlock* a, CBlock* b) -> bool {
+                return a->time < b->time;
+            });
+            curnext[1]->a51 = 1;
+            for (auto &i : curnext) {
+                if (i != *curnext.begin() &&
+                    i != *(curnext.begin() + ((*curnext.begin())->index == a51block ? 1 : 0))) delete i;
+                else i->work = i->prev->work + (uhash)awork;
+            }
+            curnext.erase(curnext.begin() + 1 + ((*curnext.begin())->index == a51block ? 1 : 0), curnext.end());
+            tmp.insert(tmp.end(), curnext.begin(), curnext.end());
         }
-        sort(curnext.begin(), curnext.end(), [](CBlock* a, CBlock* b) -> bool {
-            return a->time < b->time;
-        });
-        for (auto &i : curnext) if (i != *curnext.begin()) delete i;
-        curnext.erase(curnext.begin() + 1, curnext.end());
-        fork.push_back(*curnext.begin());
+        fork = tmp;
         --_amount;
     }
 }
@@ -64,14 +79,15 @@ CBlock::CBlock(CBlock* _prev, unsigned _algo) {
     algo = _algo;
     prev = _prev;
     index = prev->index + 1;
+    if (prev->a51) a51 = 1;
     switch (algo) {
-    case 1: ahashrate = 40;
+    case 1: ahashrate = a51 ? 160 : 40;
         break;
-    case 2: ahashrate = 80;
+    case 2: ahashrate = a51 ? 40 : 80;
         break;
-    case 3: ahashrate = index > 4000 && index < 6000 ? 150 : 20;
+    case 3: ahashrate = a51 ? 10 : 20;
         break;
-    case 4: ahashrate = 100;
+    case 4: ahashrate = a51 ? 50 : 100;
         break;
     }
     settarget();
@@ -88,7 +104,25 @@ CBlock::CBlock() {
 CBlock::~CBlock() {
 }
 
-void CBlock::Print() {
+void CBlock::PrintFork() {
+    vector <CBlock*> vp{ this, this };
+    cout << dec << setfill(' ');
+    cout << "        basic         fork   time basic    time fork       index" << endl;
+    while (!next.empty()) {
+        for (auto &i : vp) {
+            cout << setw(12) << i->work - (i->prev ? i->prev->work : 0) << ";";
+        }
+        for (auto &i : vp) {
+            cout << setw(12) << i->time << ";";
+            if (i->next.size() > 1 && vp[1] != vp[0]) i = i->next[1];
+            else i = i->next[0];
+        }
+        cout << setw(12) << vp[0]->index << endl;
+        if (vp[1]->next.empty()) break;
+    }
+}
+
+/*void CBlock::Print() {
     cout << uppercase << dec << setw(6) << setfill(' ') << index << "\t";
     cout << uppercase << dec << setw(5) <<  algo << "\t";
     cout << uppercase << dec << setw(8) << setfill('0') << work << "\t";
@@ -103,33 +137,37 @@ void CBlock::PrintAll() {
         for (auto &i : ftmp->next) i->Print();
         ftmp = ftmp->next.front();
     }
-}
+}*/
 
 void CBlock::PrintAlgo() {
-    auto ptr = fork.back();
-    unsigned a1 = 0, a2 = 0, a3 = 0, a4 = 0, t1 = 0, t2 = 0, t3 = 0, t4 = 0;
-    uhash w1 = 0, w2 = 0, w3 = 0, w4 = 0;
-    while (ptr->prev) {
-        switch (ptr->algo) {
-        case 1: a1++, t1 += ptr->time - ptr->prev->time, w1 += ~ptr->target / (ptr->target + 1) + 1;
-            break;
-        case 2: a2++, t2 += ptr->time - ptr->prev->time, w2 += ~ptr->target / (ptr->target + 1) + 1;
-            break;
-        case 3: a3++, t3 += ptr->time - ptr->prev->time, w3 += ~ptr->target / (ptr->target + 1) + 1;
-            break;
-        case 4: a4++, t4 += ptr->time - ptr->prev->time, w4 += ~ptr->target / (ptr->target + 1) + 1;
-            break;
+    for (auto ptr : fork) {//auto ptr = fork.back();
+        unsigned a1 = 0, a2 = 0, a3 = 0, a4 = 0, t1 = 0, t2 = 0, t3 = 0, t4 = 0;
+        uhash w1 = 0, w2 = 0, w3 = 0, w4 = 0;
+        while (ptr->prev) {
+            switch (ptr->algo) {
+            case 1: a1++, t1 += ptr->time - ptr->prev->time, w1 += ~ptr->target / (ptr->target + 1) + 1;
+                break;
+            case 2: a2++, t2 += ptr->time - ptr->prev->time, w2 += ~ptr->target / (ptr->target + 1) + 1;
+                break;
+            case 3: a3++, t3 += ptr->time - ptr->prev->time, w3 += ~ptr->target / (ptr->target + 1) + 1;
+                break;
+            case 4: a4++, t4 += ptr->time - ptr->prev->time, w4 += ~ptr->target / (ptr->target + 1) + 1;
+                break;
+            }
+            ptr = ptr->prev;
         }
-        ptr = ptr->prev;
+        cout << dec << "amount " << '\t' << a1 << '\t' << a2 << '\t' << a3 << '\t' << a4 << endl;
+        cout << dec << "work   " << '\t' << setw(10) << w1 << '\t' << setw(10) << w2 << '\t' << setw(10) << w3 <<
+            '\t' << setw(10) << w4 << endl;
+        cout << dec << "time   " << '\t' << (unsigned)(t1 / a1) << '\t' << (unsigned)(t2 / a2) <<
+            '\t' << (unsigned)(t3 / a3) << '\t' << (unsigned)(t4 / a4) << endl;
     }
-    cout << dec << "amount " << '\t' << a1 << '\t' << a2 << '\t' << a3 << '\t' << a4 << endl;
-    cout << dec << "work   " << '\t' << setw(10) << w1 << '\t' << setw(10) << w2 << '\t' << setw(10) << w3 <<
-        '\t' << setw(10) << w4 << endl;
-    cout << dec << "time   " << '\t' << (unsigned)(t1 / a1) << '\t' << (unsigned)(t2 / a2) <<
-        '\t' << (unsigned)(t3 / a3) << '\t' << (unsigned)(t4 / a4) << endl;
+    cout << "average work \t";
+    for (auto &i : fork) cout << i->work << " \t";
+    cout << endl;
 }
 
-void CBlock::PrintWork() {
+/*void CBlock::PrintWork() {
     auto ptr = this;
     cout << dec << setfill(' ');
     cout << "  algo 1  algo 2  algo 3  algo 4    time index" << endl;
@@ -156,5 +194,5 @@ void CBlock::PrintWork() {
         if (ptr->next.empty()) break;
         ptr = ptr->next[0];
     }
-}
+}*/
 
